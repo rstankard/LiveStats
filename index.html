@@ -99,16 +99,69 @@
   .gi .st{font-size:12px; color:var(--muted)}
   .gi .st.live{color:var(--ok)}
   .x{cursor:pointer; color:var(--muted); border:0; background:none; font-size:20px}
+  .hdr-right{display:flex; align-items:center; gap:14px}
+  .gear{display:flex; align-items:center; gap:6px; background:transparent; color:var(--muted); border:1px solid var(--line); border-radius:7px; padding:5px 10px; font-size:13px; cursor:pointer}
+  .gear:hover{color:var(--text); border-color:#3a4a5e}
+  .gear svg{width:15px; height:15px}
+  button:focus-visible,.trigger:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #5b8fd0; outline-offset:2px}
+  .fileline{margin-top:4px}
+  .fileline .ok{color:var(--ok)}
+
+  /* settings window */
+  .settings .card{width:min(640px,100%); max-height:88vh}
+  .settings .ch h2{margin:0; font-size:15px; font-weight:650}
+  .sbody{overflow:auto; padding:6px 18px 4px}
+  .sgroup{padding:14px 0; border-bottom:1px solid var(--line)}
+  .sgroup:last-child{border-bottom:0}
+  .sgroup h3{margin:0 0 4px; font-size:14px; font-weight:650}
+  .sgroup .hint{margin:0 0 12px; color:var(--muted); font-size:13px; line-height:1.45}
+  .field{display:grid; grid-template-columns:130px 1fr; gap:6px 12px; align-items:center; margin:10px 0}
+  .field > label{color:var(--muted); font-size:13px}
+  .row{display:flex; gap:8px; align-items:center; min-width:0}
+  .settings input[type=text],.settings input[type=number],.settings select{
+    background:var(--panel2); border:1px solid var(--line); color:var(--text);
+    border-radius:8px; padding:8px 10px; font-size:14px; min-width:0; width:100%;
+  }
+  .settings input:disabled,.settings select:disabled{opacity:.55}
+  .settings input[type=number]{width:110px}
+  .check{display:flex; gap:9px; align-items:center; font-size:14px; cursor:pointer}
+  .check input{width:16px; height:16px; accent-color:#3a7fd0}
+  .fstat{font-size:13px; color:var(--muted); grid-column:2; min-height:18px; display:flex; gap:10px; align-items:center; flex-wrap:wrap}
+  .fstat.good{color:var(--ok)} .fstat.bad{color:var(--amber)}
+  .linkbtn{background:none; border:0; color:#7fb2ff; cursor:pointer; padding:0; font-size:13px; text-decoration:underline}
+  .fullpath{grid-column:2; display:flex; gap:8px; align-items:center; background:var(--panel2); border:1px dashed var(--line); border-radius:8px; padding:8px 10px; font-size:13px; word-break:break-all}
+  .fullpath code{flex:1; color:var(--text)}
+  .lockednote{font-size:12.5px; color:var(--amber); margin:6px 0 0}
+  .cf{display:flex; justify-content:space-between; align-items:center; gap:10px; padding:12px 18px; border-top:1px solid var(--line)}
+  .cf .msg{font-size:13px; color:var(--muted)}
+  .cf .msg.err{color:var(--live)} .cf .msg.good{color:var(--ok)}
+  .cf .btns{display:flex; gap:8px}
+  button.primary{background:#1f5fae; border-color:#2b74cc; color:#fff}
+  button.primary:hover{background:#2468bd}
+  @media (max-width:560px){ .field{grid-template-columns:1fr} .fstat,.fullpath{grid-column:1} }
+
+  /* in-panel folder browser (fallback when the Windows dialog isn't available) */
+  .fb .card{width:min(560px,100%); max-height:80vh; z-index:11}
+  .fb{z-index:10}
+  .fb .cur{flex:1; font-size:13px; color:var(--text); word-break:break-all}
+  .fb .gi{justify-content:flex-start}
+  .fb .gi .ico{color:var(--amber)}
 </style>
 </head>
 <body>
   <header>
     <h1>ESPN <span>→</span> XPression feed</h1>
-    <div class="feed">
-      <span class="dot" id="fdot"></span>
-      <span id="fstate">idle</span>
-      <span class="url mono" id="furl"></span>
-      <button class="copy" id="fcopy">copy</button>
+    <div class="hdr-right">
+      <div class="feed">
+        <span class="dot" id="fdot"></span>
+        <span id="fstate">idle</span>
+        <span class="url mono" id="furl"></span>
+        <button class="copy" id="fcopy">copy</button>
+      </div>
+      <button class="gear" id="openSettings" title="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Settings
+      </button>
     </div>
   </header>
 
@@ -125,6 +178,7 @@
       <div class="pullinfo" id="pullinfo">Load a game, then hit to pull stats.</div>
       <div class="modes" id="modes" title="How often to refresh the feed">
         <button data-ms="0" class="on">Manual</button>
+        <button data-ms="5000">5s</button>
         <button data-ms="15000">15s</button>
         <button data-ms="30000">30s</button>
         <button data-ms="60000">1m</button>
@@ -142,6 +196,7 @@
 
   <footer>
     In XPression, point your <b>football statcrew</b> DataLinq source at <code id="furl2"></code> and poll it. Players are keyed by jersey, so <code class="mono">team\player&lt;code=@Key_Stat@&gt;\rush</code> works as-is. Each hit refreshes the feed.
+    <div class="fileline" id="fileline"></div>
   </footer>
 
   <div class="picker" id="picker">
@@ -156,12 +211,114 @@
     </div>
   </div>
 
+  <div class="picker settings" id="settings" role="dialog" aria-modal="true" aria-labelledby="stitle">
+    <div class="card">
+      <div class="ch">
+        <h2 id="stitle">Settings</h2>
+        <span class="grow"></span>
+        <button class="x" id="sclose" aria-label="Close settings">×</button>
+      </div>
+      <div class="sbody">
+        <section class="sgroup">
+          <h3>Output file</h3>
+          <p class="hint">Writes the feed to an XML file that XPression's XML Linq source reads. Paste the full path below into the source's XML Filename field.</p>
+          <label class="check"><input type="checkbox" id="sWrite"> Write the feed to a file</label>
+          <div id="outFields">
+            <div class="field">
+              <label for="sFolder">Folder</label>
+              <div class="row">
+                <input type="text" id="sFolder" class="mono" placeholder="D:\Data\Football" spellcheck="false">
+                <button class="btn" id="sBrowse">Browse…</button>
+              </div>
+              <div class="fstat" id="sFolderStat"></div>
+            </div>
+            <div class="field">
+              <label for="sName">File name</label>
+              <input type="text" id="sName" class="mono" placeholder="livestats.xml" spellcheck="false">
+            </div>
+            <div class="field">
+              <label>Full path</label>
+              <div class="fullpath"><code class="mono" id="sFull">—</code><button class="copy" id="sCopyFull">copy</button></div>
+            </div>
+          </div>
+          <p class="lockednote" id="lockOutput" hidden></p>
+        </section>
+
+        <section class="sgroup">
+          <h3>When the server starts</h3>
+          <div class="field">
+            <label for="sStartGame">Game</label>
+            <select id="sStartGame">
+              <option value="last">Reload the last game I loaded</option>
+              <option value="fixed">Load a specific game</option>
+              <option value="none">Start with no game</option>
+            </select>
+          </div>
+          <div class="field" id="sEventRow">
+            <label for="sEvent">ESPN event id</label>
+            <input type="text" id="sEvent" class="mono" inputmode="numeric" placeholder="401856686">
+          </div>
+          <p class="lockednote" id="lockGame" hidden></p>
+          <div class="field">
+            <label for="sAuto">Refresh</label>
+            <select id="sAuto">
+              <option value="0">Manual</option>
+              <option value="5000">Every 5 seconds</option>
+              <option value="15000">Every 15 seconds</option>
+              <option value="30000">Every 30 seconds</option>
+              <option value="60000">Every minute</option>
+              <option value="120000">Every 2 minutes</option>
+            </select>
+          </div>
+          <p class="lockednote" id="lockAuto" hidden></p>
+          <label class="check"><input type="checkbox" id="sOpen"> Open this control panel in the browser</label>
+        </section>
+
+        <section class="sgroup">
+          <h3>Server</h3>
+          <p class="hint">Changing the port moves this panel and the feed URL. If XPression reads the URL instead of the file, update it there too.</p>
+          <div class="field">
+            <label for="sPort">Port</label>
+            <input type="number" id="sPort" min="1" max="65535" class="mono">
+          </div>
+          <p class="lockednote" id="lockPort" hidden></p>
+        </section>
+      </div>
+      <div class="cf">
+        <span class="msg" id="sMsg" aria-live="polite"></span>
+        <div class="btns">
+          <button class="btn" id="sCancel">Cancel</button>
+          <button class="btn primary" id="sSave">Save settings</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="picker fb" id="fb" role="dialog" aria-modal="true" aria-label="Choose a folder">
+    <div class="card">
+      <div class="ch">
+        <button class="btn" id="fbUp" title="Up one level">Up</button>
+        <span class="cur mono" id="fbCur"></span>
+        <button class="x" id="fbClose" aria-label="Close">×</button>
+      </div>
+      <div class="list" id="fbList"></div>
+      <div class="cf">
+        <span class="msg" id="fbMsg"></span>
+        <div class="btns">
+          <button class="btn" id="fbCancel">Cancel</button>
+          <button class="btn primary" id="fbChoose">Use this folder</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
 <script>
 const $ = s => document.querySelector(s);
 const feedUrl = location.origin + '/feed.xml';
 $('#furl').textContent = feedUrl; $('#furl2').textContent = feedUrl;
 $('#fcopy').onclick = () => navigator.clipboard?.writeText(feedUrl);
 
+function escH(s){ return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function fmtTime(iso){ if(!iso) return 'never'; const d=new Date(iso); return d.toLocaleTimeString(); }
 
 function renderTeam(el, t, rows){
@@ -209,6 +366,11 @@ function apply(st){
   } else if(!st.updated){ lastUpdated=null; }
 
   $('#modes').querySelectorAll('button').forEach(b=> b.classList.toggle('on', (+b.dataset.ms)===autoMs));
+  const fl=$('#fileline');
+  if(st.fileError) fl.innerHTML = `<span class="err">${escH(st.fileError)}</span>`;
+  else if(st.outFile) fl.innerHTML = `Writing to <code class="mono">${escH(st.outFile)}</code>${st.fileWritten?` <span class="ok">· saved ${fmtTime(st.fileWritten)}</span>`:''}`;
+  else fl.innerHTML = 'File output is off. Turn it on in <button class="linkbtn" id="flSet">Settings</button>.';
+  const fs_=$('#flSet'); if(fs_) fs_.onclick=openSettings;
   updateInfo();
 
   const V=(st.teams||[]).find(t=>t.vh==='V'), H=(st.teams||[]).find(t=>t.vh==='H');
@@ -263,6 +425,136 @@ $('#pgo').onclick = async () => {
     $('#plist').querySelectorAll('.gi').forEach(el=> el.onclick = () => { $('#eid').value=el.dataset.id; loadGame(el.dataset.id); $('#picker').classList.remove('open'); });
   }catch(e){ $('#plist').innerHTML='<div class="empty">Lookup failed: '+e.message+'</div>'; }
 };
+
+// ---- settings window ----
+let S=null;               // last payload from /api/settings
+const sep = () => (S && S.platform==='win32') ? '\\' : '/';
+const joinPath = (dir,name) => !dir ? '' : (dir.endsWith('\\')||dir.endsWith('/') ? dir+name : dir+sep()+name);
+function sMsg(text, cls){ const m=$('#sMsg'); m.textContent=text||''; m.className='msg'+(cls?' '+cls:''); }
+
+function refreshOutUI(){
+  const on=$('#sWrite').checked, lockedOut=S.locked.includes('output');
+  $('#outFields').style.display = on ? '' : 'none';
+  ['#sFolder','#sName','#sBrowse','#sWrite'].forEach(id=> $(id).disabled = lockedOut);
+  const name=$('#sName').value.trim()||'livestats.xml';
+  $('#sFull').textContent = lockedOut ? S.env.outFile : (joinPath($('#sFolder').value.trim(), name) || '—');
+}
+let checkSeq=0, checkTimer=null;
+function queueCheck(){ clearTimeout(checkTimer); checkTimer=setTimeout(checkFolderNow, 250); refreshOutUI(); }
+async function checkFolderNow(){
+  const dir=$('#sFolder').value.trim(), el=$('#sFolderStat'), seq=++checkSeq;
+  if(!dir){ el.className='fstat'; el.textContent='Choose or type a folder.'; return; }
+  try{
+    const r=await (await fetch('/api/checkfolder?path='+encodeURIComponent(dir))).json();
+    if(seq!==checkSeq) return;
+    if(r.writable){ el.className='fstat good'; el.textContent='✓ Folder exists and is writable'; }
+    else if(r.error){ el.className='fstat bad'; el.textContent=r.error; }
+    else if(!r.exists){
+      el.className='fstat bad';
+      el.innerHTML='This folder doesn\'t exist yet. <button class="linkbtn" id="sMk">Create it</button>';
+      $('#sMk').onclick=createFolder;
+    }
+  }catch{ el.className='fstat'; el.textContent=''; }
+}
+async function createFolder(){
+  const dir=$('#sFolder').value.trim();
+  const r=await (await fetch('/api/mkdir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:dir})})).json();
+  if(!r.ok){ $('#sFolderStat').className='fstat bad'; $('#sFolderStat').textContent=r.error; return; }
+  checkFolderNow();
+}
+
+function fillSettings(P){
+  S=P; const s=P.settings;
+  $('#sWrite').checked = P.locked.includes('output') ? true : !!s.writeFile;
+  $('#sFolder').value = s.outFolder||''; $('#sName').value = s.outName||'livestats.xml';
+  $('#sStartGame').value = s.startupGame||'last'; $('#sEvent').value = s.startupEventId||'';
+  $('#sAuto').value = String(s.startupAutoMs||0); $('#sOpen').checked = !!s.openBrowser;
+  $('#sPort').value = s.port;
+  const lock=(key, el, text, ctrls)=>{ const on=P.locked.includes(key); el.hidden=!on; el.textContent=on?text:''; ctrls.forEach(c=>$(c).disabled=on); };
+  lock('output', $('#lockOutput'), `start.bat sets OUT_FILE=${P.env.outFile}, which overrides this. Remove that line from start.bat to manage it here.`, []);
+  lock('startupGame', $('#lockGame'), `start.bat sets EVENT_ID=${P.env.eventId}, which overrides this.`, ['#sStartGame','#sEvent']);
+  lock('startupAutoMs', $('#lockAuto'), `start.bat sets AUTO=${(P.env.autoMs||0)/1000}, which overrides this.`, ['#sAuto']);
+  lock('port', $('#lockPort'), `start.bat sets PORT=${P.env.port}, which overrides this.`, ['#sPort']);
+  $('#sEventRow').style.display = $('#sStartGame').value==='fixed' ? '' : 'none';
+  refreshOutUI(); checkFolderNow(); sMsg('');
+}
+async function openSettings(){
+  $('#settings').classList.add('open'); sMsg('Loading…');
+  try{
+    const P=await (await fetch('/api/settings')).json();
+    if(!P.ok) throw new Error(P.error||'Could not load settings');
+    fillSettings(P);
+  }catch(e){ sMsg(e.message,'err'); }
+}
+function closeSettings(){ $('#settings').classList.remove('open'); }
+
+$('#openSettings').onclick=openSettings;
+$('#sclose').onclick=closeSettings; $('#sCancel').onclick=closeSettings;
+$('#settings').onclick=e=>{ if(e.target===$('#settings')) closeSettings(); };
+$('#sWrite').onchange=()=>{ refreshOutUI(); if($('#sWrite').checked) checkFolderNow(); };
+$('#sFolder').oninput=queueCheck; $('#sName').oninput=refreshOutUI;
+$('#sStartGame').onchange=()=>{ $('#sEventRow').style.display = $('#sStartGame').value==='fixed' ? '' : 'none'; };
+$('#sCopyFull').onclick=()=> navigator.clipboard?.writeText($('#sFull').textContent);
+
+$('#sBrowse').onclick=async()=>{
+  if(!S) return;
+  if(!S.nativePicker){ openFolderBrowser($('#sFolder').value.trim()); return; }
+  const b=$('#sBrowse'); b.disabled=true; sMsg('Folder dialog open. If you don\'t see it, check behind the browser.');
+  try{
+    const r=await (await fetch('/api/pickfolder',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({initial:$('#sFolder').value.trim()})})).json();
+    if(r.ok && r.path){ $('#sFolder').value=r.path; sMsg(''); queueCheck(); }
+    else if(r.ok){ sMsg(''); }
+    else { sMsg(r.error+' Opening the built-in browser instead.','err'); openFolderBrowser($('#sFolder').value.trim()); }
+  }catch(e){ sMsg(e.message,'err'); }
+  finally{ b.disabled=false; }
+};
+
+$('#sSave').onclick=async()=>{
+  const body={
+    writeFile:$('#sWrite').checked, outFolder:$('#sFolder').value.trim(), outName:$('#sName').value.trim(),
+    startupGame:$('#sStartGame').value, startupEventId:$('#sEvent').value.trim(),
+    startupAutoMs:+$('#sAuto').value, openBrowser:$('#sOpen').checked, port:$('#sPort').value,
+  };
+  if(S.locked.includes('output')){ delete body.writeFile; delete body.outFolder; delete body.outName; }
+  if(S.locked.includes('port')) delete body.port;
+  const btn=$('#sSave'); btn.disabled=true; sMsg('Saving…');
+  try{
+    const r=await (await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+    if(!r.ok) throw new Error(r.error||'Save failed');
+    if(r.newUrl){ sMsg('Saved. Moving to '+r.newUrl+'…','good'); setTimeout(()=>{ location.href=r.newUrl; },1000); return; }
+    fillSettings(r); sMsg('Saved.','good'); status();
+    setTimeout(()=>{ if($('#sMsg').textContent==='Saved.') closeSettings(); },700);
+  }catch(e){ sMsg(e.message,'err'); }
+  finally{ btn.disabled=false; }
+};
+
+// ---- built-in folder browser (used when the Windows dialog isn't available) ----
+let fbPath='';
+async function fbLoad(p){
+  $('#fbMsg').textContent=''; $('#fbList').innerHTML='<div class="empty">Loading…</div>';
+  const r=await (await fetch('/api/ls?path='+encodeURIComponent(p||''))).json();
+  if(!r.ok){ $('#fbMsg').textContent=r.error; $('#fbMsg').className='msg err'; if(p) return fbLoad(''); return; }
+  fbPath=r.path; $('#fbCur').textContent=r.path||'This PC';
+  $('#fbUp').disabled = r.parent===null || r.parent===undefined;
+  $('#fbUp').onclick=()=>fbLoad(r.parent);
+  $('#fbChoose').disabled=!r.path;
+  $('#fbList').innerHTML = r.dirs.length
+    ? r.dirs.map(d=>`<div class="gi" tabindex="0" data-p="${escH(d.path)}"><span class="ico">▸</span><span>${escH(d.name)}</span></div>`).join('')
+    : '<div class="empty">No subfolders. Use this folder, or go up.</div>';
+  $('#fbList').querySelectorAll('.gi').forEach(el=>{ el.onclick=()=>fbLoad(el.dataset.p); el.onkeydown=e=>{ if(e.key==='Enter') fbLoad(el.dataset.p); }; });
+}
+function openFolderBrowser(start){ $('#fb').classList.add('open'); fbLoad(start); }
+function closeFb(){ $('#fb').classList.remove('open'); }
+$('#fbClose').onclick=closeFb; $('#fbCancel').onclick=closeFb;
+$('#fb').onclick=e=>{ if(e.target===$('#fb')) closeFb(); };
+$('#fbChoose').onclick=()=>{ if(!fbPath) return; $('#sFolder').value=fbPath; closeFb(); queueCheck(); };
+
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Escape') return;
+  if($('#fb').classList.contains('open')) closeFb();
+  else if($('#settings').classList.contains('open')) closeSettings();
+  else $('#picker').classList.remove('open');
+});
 
 status(); setInterval(status, 5000);
 let resyncGuard=0;

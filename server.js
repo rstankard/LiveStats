@@ -2,40 +2,94 @@
 /**
  * espn-statcrew — on-demand ESPN -> StatCrew XML feed for Ross XPression DataLinq
  *
- * Click "HIT ME" in the browser control panel; the server fetches the ESPN
- * college-football boxscore for the chosen game, reshapes it into StatCrew-style
- * XML, and serves it at /feed.xml for your XPression "football statcrew" DataLinq
- * source. Players are keyed by jersey (code + uni), so your existing
- * team\player<code=@Key_Stat@>\rush / att mappings resolve unchanged.
+ * Pulls the ESPN college-football boxscore for the chosen game, reshapes it into
+ * StatCrew-style XML, serves it at /feed.xml and (optionally) writes it to a file
+ * for your XPression "football statcrew" XML Linq source. Players are keyed by
+ * jersey (code + uni), so team\player<code=@Key_Stat@>\rush / att resolves unchanged.
+ *
+ * Everything is configured from the Settings window in the control panel and saved
+ * to settings.json next to this file. Environment variables set in start.bat
+ * (PORT, OUT_FILE, EVENT_ID, AUTO) still work and override the saved settings.
  *
  *   /            control panel (open in a browser)
- *   /feed.xml    latest StatCrew XML   (point XPression DataLinq here)
+ *   /feed.xml    latest StatCrew XML
  *   /api/pull    fetch ESPN + rebuild the XML (the button calls this)
  *   /api/status  current game + last pull info
+ *   /api/settings, /api/pickfolder, /api/checkfolder, /api/mkdir, /api/ls  (settings window)
  *   /api/scoreboard?date=YYYYMMDD   list games to pick from
  *   /health      plain status
  *
  * Node 18+ (global fetch). No dependencies, no install, no admin.
- *
- * Env (all optional): PORT (default 8089), EVENT_ID, OUT_FILE (also write XML to a path).
  */
 'use strict';
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
+const { spawn } = require('child_process');
 
-const CONFIG = {
-  port: parseInt(process.env.PORT || '8089', 10),
-  eventId: (process.env.EVENT_ID || '').trim(),
-  outFile: process.env.OUT_FILE || '',
-  autoMs: (parseInt(process.env.AUTO || '0', 10) || 0) * 1000, // AUTO in seconds; 0 = manual
-};
 const ESPN = 'https://site.api.espn.com/apis/site/v2/sports/football/college-football';
 const UA = 'curl/8.5.0'; // ESPN's WAF rejects browser/custom UAs from some IPs but allows curl-style
+const IS_WIN = process.platform === 'win32';
+const AUTO_CHOICES = [0, 5000, 15000, 30000, 60000, 120000];
+
+// ---- settings ---------------------------------------------------------------
+const SETTINGS_FILE = path.join(__dirname, 'settings.json');
+const DEFAULTS = {
+  port: 8089,
+  writeFile: false,        // also write the XML to a file
+  outFolder: '',
+  outName: 'livestats.xml',
+  startupGame: 'last',     // 'last' | 'fixed' | 'none'
+  startupEventId: '',
+  startupAutoMs: 0,        // refresh mode when the server starts
+  openBrowser: true,       // open the control panel when the server starts
+  lastEventId: '',         // remembered automatically
+};
+
+function loadSettings() {
+  let saved = {};
+  try { saved = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8')); }
+  catch (e) { if (e.code !== 'ENOENT') console.warn('[warn] settings.json unreadable, using defaults:', e.message); }
+  return { ...DEFAULTS, ...saved };
+}
+function saveSettings() {
+  const tmp = SETTINGS_FILE + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(settings, null, 2));
+  fs.renameSync(tmp, SETTINGS_FILE);
+}
+
+// start.bat variables win over saved settings; the panel shows those fields as locked.
+const ENV = {
+  port: process.env.PORT ? parseInt(process.env.PORT, 10) : null,
+  outFile: (process.env.OUT_FILE || '').trim().replace(/^"|"$/g, ''),
+  eventId: (process.env.EVENT_ID || '').trim(),
+  autoMs: process.env.AUTO ? (parseInt(process.env.AUTO, 10) || 0) * 1000 : null,
+};
+const locked = [];
+if (ENV.port) locked.push('port');
+if (ENV.outFile) locked.push('output');
+if (ENV.eventId) locked.push('startupGame');
+if (ENV.autoMs !== null) locked.push('startupAutoMs');
+
+let settings = loadSettings();
+
+function effectivePort() { return ENV.port || settings.port; }
+function effectiveOutFile() {
+  if (ENV.outFile) return ENV.outFile;
+  if (!settings.writeFile || !settings.outFolder) return '';
+  return path.join(settings.outFolder, settings.outName || DEFAULTS.outName);
+}
+function startupEventId() {
+  if (ENV.eventId) return ENV.eventId;
+  if (settings.startupGame === 'fixed') return settings.startupEventId || '';
+  if (settings.startupGame === 'last') return settings.lastEventId || '';
+  return '';
+}
+function startupAutoMs() { return ENV.autoMs !== null ? ENV.autoMs : settings.startupAutoMs; }
 
 const state = {
-  eventId: CONFIG.eventId || null,
+  eventId: startupEventId() || null,
   gameLabel: null,
   xml: null,
   updated: null,
@@ -45,6 +99,8 @@ const state = {
   preview: [],     // [{vh, code, name, stats:[...] }] rushing preview
   autoMs: 0,       // 0 = manual; else auto-pull interval in ms
   nextAt: null,    // timestamp of next scheduled auto pull
+  fileError: null, // last output-file write failure
+  fileWritten: null,
 };
 
 // ---- ESPN category -> StatCrew element + attribute names --------------------
@@ -180,6 +236,21 @@ async function buildXml(eventId) {
   return { xml, teamsMeta, previewOut, label, count: teamsMeta.reduce((n, t) => n + t.players, 0) };
 }
 
+
+function writeOutFile() {
+  const out = effectiveOutFile();
+  if (!out || !state.xml) { state.fileError = null; return; }
+  try {
+    fs.writeFileSync(out, state.xml);
+    state.fileError = null; state.fileWritten = new Date().toISOString();
+  } catch (e) {
+    state.fileError = e.code === 'ENOENT'
+      ? `Can't write ${out}: the folder doesn't exist. Create it in Settings.`
+      : `Can't write ${out}: ${e.message}`;
+    console.warn('[warn] output file:', state.fileError);
+  }
+}
+
 let pulling = false;
 async function pull() {
   if (pulling) return;                 // don't overlap a fetch already in flight
@@ -194,10 +265,7 @@ async function pull() {
     state.playerCount = count;
     state.gameLabel = label;
     state.error = null;
-    if (CONFIG.outFile) {
-      try { fs.writeFileSync(CONFIG.outFile, xml); }
-      catch (e) { console.warn('[warn] OUT_FILE write failed:', e.message); }
-    }
+    writeOutFile();
     console.log(`[pull] ${state.updated}  ${label}  ${count} players  ${Buffer.byteLength(xml)}B`);
   } finally {
     pulling = false;
@@ -220,6 +288,89 @@ async function autoTick() {
   catch (e) { state.error = e.message; console.warn('[auto]', e.message); }
 }
 
+// ---- folder helpers (settings window) ----------------------------------------
+function checkFolder(p) {
+  if (!p) return { exists: false, isDir: false, writable: false };
+  if (!path.isAbsolute(p)) return { exists: false, isDir: false, writable: false, error: 'Use a full path, like D:\\Data\\Football' };
+  let st;
+  try { st = fs.statSync(p); } catch { return { exists: false, isDir: false, writable: false }; }
+  if (!st.isDirectory()) return { exists: true, isDir: false, writable: false, error: 'That path is a file, not a folder' };
+  try { fs.accessSync(p, fs.constants.W_OK); return { exists: true, isDir: true, writable: true }; }
+  catch { return { exists: true, isDir: true, writable: false, error: 'This folder is read-only for your account' }; }
+}
+
+function listDir(p) {
+  if (!p) {
+    if (IS_WIN) {
+      const drives = [];
+      for (let c = 65; c <= 90; c++) {
+        const d = String.fromCharCode(c) + ':\\';
+        try { fs.accessSync(d); drives.push(d); } catch {}
+      }
+      return { path: '', parent: null, dirs: drives.map(d => ({ name: d, path: d })) };
+    }
+    p = '/';
+  }
+  const full = path.resolve(p);
+  const dirs = fs.readdirSync(full, { withFileTypes: true })
+    .filter(d => { try { return d.isDirectory() && !d.name.startsWith('$'); } catch { return false; } })
+    .map(d => ({ name: d.name, path: path.join(full, d.name) }))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  const up = path.dirname(full);
+  const parent = up === full ? (IS_WIN ? '' : null) : up;
+  return { path: full, parent, dirs };
+}
+
+// Native Windows folder dialog via PowerShell (no admin, no install).
+let picking = false;
+function pickFolderNative(initial) {
+  return new Promise((resolve, reject) => {
+    if (!IS_WIN) return reject(new Error('The Windows folder dialog is only available on Windows.'));
+    if (picking) return reject(new Error('A folder dialog is already open. Check behind your other windows.'));
+    picking = true;
+    const ps = [
+      '[Console]::OutputEncoding = [Text.Encoding]::UTF8',
+      'Add-Type -AssemblyName System.Windows.Forms',
+      '$d = New-Object System.Windows.Forms.FolderBrowserDialog',
+      "$d.Description = 'Choose the folder for the XPression XML file'",
+      '$d.ShowNewFolderButton = $true',
+      'if ($env:PICK_INITIAL -and (Test-Path -LiteralPath $env:PICK_INITIAL)) { $d.SelectedPath = $env:PICK_INITIAL }',
+      '$o = New-Object System.Windows.Forms.Form',
+      '$o.TopMost = $true; $o.ShowInTaskbar = $false',
+      "if ($d.ShowDialog($o) -eq 'OK') { [Console]::Out.Write($d.SelectedPath) }",
+    ].join('; ');
+    const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-STA', '-Command', ps], {
+      env: { ...process.env, PICK_INITIAL: initial || '' }, windowsHide: true,
+    });
+    let out = '', err = '';
+    child.stdout.on('data', d => out += d);
+    child.stderr.on('data', d => err += d);
+    child.on('error', e => { picking = false; reject(new Error('Could not start PowerShell: ' + e.message)); });
+    child.on('close', code => {
+      picking = false;
+      if (code !== 0) return reject(new Error('The folder dialog failed to open' + (err ? `: ${err.trim().split('\n')[0]}` : '.')));
+      resolve(out.trim() || null);   // null = cancelled
+    });
+  });
+}
+
+function openBrowser(url) {
+  try {
+    const cmd = IS_WIN ? ['cmd.exe', ['/c', 'start', '', url]]
+      : process.platform === 'darwin' ? ['open', [url]] : ['xdg-open', [url]];
+    spawn(cmd[0], cmd[1], { detached: true, stdio: 'ignore', windowsHide: true }).on('error', () => {}).unref();
+  } catch {}
+}
+
+function settingsPayload() {
+  return {
+    settings,
+    effective: { port: effectivePort(), outFile: effectiveOutFile() },
+    env: { port: ENV.port, outFile: ENV.outFile || null, eventId: ENV.eventId || null, autoMs: ENV.autoMs },
+    locked, platform: process.platform, nativePicker: IS_WIN, autoChoices: AUTO_CHOICES,
+  };
+}
+
 // ---- http -------------------------------------------------------------------
 const INDEX = (() => {
   try { return fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8'); }
@@ -235,11 +386,34 @@ function readBody(req) {
     let b = ''; req.on('data', c => b += c); req.on('end', () => { try { resolve(JSON.parse(b || '{}')); } catch { resolve({}); } });
   });
 }
+function isLoopback(req) {
+  const a = req.socket.remoteAddress || '';
+  return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1';
+}
+// Settings and folder endpoints only answer the control panel on this PC:
+// local requests, same origin, JSON bodies.
+function guardLocal(req, res) {
+  if (!isLoopback(req)) { sendJson(res, 403, { ok: false, error: 'Settings can only be changed from this PC.' }); return false; }
+  const origin = req.headers.origin;
+  if (origin) {
+    let ok = false;
+    try { ok = new URL(origin).host === req.headers.host; } catch {}
+    if (!ok) { sendJson(res, 403, { ok: false, error: 'Cross-origin request refused.' }); return false; }
+  }
+  if (req.method === 'POST' && !String(req.headers['content-type'] || '').includes('application/json')) {
+    sendJson(res, 415, { ok: false, error: 'Expected JSON.' }); return false;
+  }
+  return true;
+}
 
-const server = http.createServer(async (req, res) => {
+const SETTINGS_API = new Set(['/api/settings', '/api/pickfolder', '/api/checkfolder', '/api/mkdir', '/api/ls']);
+
+async function handler(req, res) {
   const u = new URL(req.url, 'http://localhost');
   const p = u.pathname;
   try {
+    if (SETTINGS_API.has(p) && !guardLocal(req, res)) return;
+
     if (p === '/' || p === '/index.html') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(INDEX); return;
     }
@@ -252,7 +426,8 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, {
         eventId: state.eventId, game: state.gameLabel, updated: state.updated,
         teams: state.teams, playerCount: state.playerCount, preview: state.preview,
-        error: state.error, outFile: CONFIG.outFile || null,
+        error: state.error, outFile: effectiveOutFile() || null,
+        fileError: state.fileError, fileWritten: state.fileWritten,
         autoMs: state.autoMs, nextAt: state.nextAt,
       }); return;
     }
@@ -260,6 +435,10 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       state.eventId = String(body.eventId || '').trim() || null;
       state.gameLabel = null; state.xml = null; state.updated = null; state.teams = []; state.preview = []; state.playerCount = 0;
+      if (state.eventId && state.eventId !== settings.lastEventId) {
+        settings.lastEventId = state.eventId;
+        try { saveSettings(); } catch (e) { console.warn('[warn] could not save settings:', e.message); }
+      }
       sendJson(res, 200, { ok: true, eventId: state.eventId }); return;
     }
     if (p === '/api/pull' && req.method === 'POST') {
@@ -270,6 +449,88 @@ const server = http.createServer(async (req, res) => {
       scheduleAuto(Number(body.ms) || 0);
       sendJson(res, 200, { ok: true, autoMs: state.autoMs, nextAt: state.nextAt }); return;
     }
+
+    // ---- settings window ----
+    if (p === '/api/settings' && req.method === 'GET') { sendJson(res, 200, { ok: true, ...settingsPayload() }); return; }
+    if (p === '/api/settings' && req.method === 'POST') {
+      const b = await readBody(req);
+      const next = { ...settings };
+      const problems = [];
+      if (b.port !== undefined) {
+        const n = parseInt(b.port, 10);
+        if (!(n >= 1 && n <= 65535)) problems.push('Port must be a number from 1 to 65535.');
+        else next.port = n;
+      }
+      if (b.writeFile !== undefined) next.writeFile = !!b.writeFile;
+      if (b.outFolder !== undefined) next.outFolder = String(b.outFolder).trim().replace(/^"|"$/g, '');
+      if (b.outName !== undefined) {
+        const name = String(b.outName).trim() || DEFAULTS.outName;
+        if (/[\\/:*?"<>|]/.test(name)) problems.push('The file name can\'t contain \\ / : * ? " < > |');
+        else next.outName = name;
+      }
+      if (next.writeFile && !next.outFolder) problems.push('Choose a folder for the output file, or turn file output off.');
+      if (next.writeFile && next.outFolder && !path.isAbsolute(next.outFolder)) problems.push('The output folder must be a full path, like D:\\Data\\Football.');
+      if (b.startupGame !== undefined) {
+        if (!['last', 'fixed', 'none'].includes(b.startupGame)) problems.push('Unknown startup game option.');
+        else next.startupGame = b.startupGame;
+      }
+      if (b.startupEventId !== undefined) next.startupEventId = String(b.startupEventId).replace(/[^0-9]/g, '');
+      if (next.startupGame === 'fixed' && !next.startupEventId) problems.push('Enter the ESPN event id to load at startup.');
+      if (b.startupAutoMs !== undefined) {
+        const ms = Number(b.startupAutoMs);
+        if (!AUTO_CHOICES.includes(ms)) problems.push('Unknown refresh mode.');
+        else next.startupAutoMs = ms;
+      }
+      if (b.openBrowser !== undefined) next.openBrowser = !!b.openBrowser;
+      if (problems.length) { sendJson(res, 400, { ok: false, error: problems.join(' ') }); return; }
+
+      // Port change: bind the new port first, so a busy port fails cleanly.
+      let newUrl = null;
+      if (!ENV.port && next.port !== currentPort) {
+        try {
+          const s = await listenOn(next.port);
+          const old = server;
+          server = s; currentPort = next.port;
+          newUrl = `http://localhost:${currentPort}/`;
+          setTimeout(() => { old.close(); if (old.closeAllConnections) old.closeAllConnections(); }, 1500);
+          console.log(`[port] moved to ${currentPort}. Feed URL is now http://localhost:${currentPort}/feed.xml`);
+        } catch (e) {
+          sendJson(res, 409, { ok: false, error: e.code === 'EADDRINUSE' ? `Port ${next.port} is already in use. Pick another.` : `Couldn't use port ${next.port}: ${e.message}` });
+          return;
+        }
+      }
+
+      const outBefore = effectiveOutFile();
+      settings = next;
+      saveSettings();
+      if (effectiveOutFile() !== outBefore) writeOutFile(); // rewrite the current feed to the new spot right away
+      if (!effectiveOutFile()) state.fileError = null;
+      console.log('[settings] saved');
+      sendJson(res, 200, { ok: true, newUrl, ...settingsPayload() }); return;
+    }
+    if (p === '/api/pickfolder' && req.method === 'POST') {
+      const b = await readBody(req);
+      try {
+        const picked = await pickFolderNative(String(b.initial || ''));
+        sendJson(res, 200, { ok: true, path: picked, cancelled: !picked });
+      } catch (e) { sendJson(res, 200, { ok: false, error: e.message }); }
+      return;
+    }
+    if (p === '/api/checkfolder') { sendJson(res, 200, { ok: true, ...checkFolder(u.searchParams.get('path') || '') }); return; }
+    if (p === '/api/mkdir' && req.method === 'POST') {
+      const b = await readBody(req);
+      const dir = String(b.path || '').trim();
+      if (!dir || !path.isAbsolute(dir)) { sendJson(res, 400, { ok: false, error: 'Use a full path, like D:\\Data\\Football' }); return; }
+      try { fs.mkdirSync(dir, { recursive: true }); sendJson(res, 200, { ok: true, ...checkFolder(dir) }); }
+      catch (e) { sendJson(res, 200, { ok: false, error: `Couldn't create the folder: ${e.message}` }); }
+      return;
+    }
+    if (p === '/api/ls') {
+      try { sendJson(res, 200, { ok: true, ...listDir(u.searchParams.get('path') || '') }); }
+      catch (e) { sendJson(res, 200, { ok: false, error: `Can't open that folder: ${e.message}` }); }
+      return;
+    }
+
     if (p === '/api/scoreboard') {
       const date = (u.searchParams.get('date') || '').replace(/[^0-9]/g, '');
       const url = `${ESPN}/scoreboard?groups=80&limit=200${date ? `&dates=${date}` : ''}`;
@@ -282,7 +543,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (p === '/health') {
       res.writeHead(200, { 'Content-Type': 'text/plain' });
-      res.end(`event=${state.eventId || ''}\nupdated=${state.updated || 'never'}\nplayers=${state.playerCount}\nerror=${state.error || 'none'}\n`); return;
+      res.end(`event=${state.eventId || ''}\nupdated=${state.updated || 'never'}\nplayers=${state.playerCount}\nerror=${state.error || 'none'}\nfile=${effectiveOutFile() || 'off'}\nfileError=${state.fileError || 'none'}\n`); return;
     }
     res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('not found');
   } catch (e) {
@@ -291,11 +552,33 @@ const server = http.createServer(async (req, res) => {
     else { res.writeHead(500, { 'Content-Type': 'text/plain' }); res.end(e.message); }
     console.warn('[err]', p, e.message);
   }
-});
+}
 
-server.listen(CONFIG.port, () => {
-  console.log(`espn-statcrew running: http://localhost:${CONFIG.port}`);
-  console.log(`XPression feed URL:    http://localhost:${CONFIG.port}/feed.xml`);
-  if (state.eventId) console.log(`preloaded event: ${state.eventId}`);
-  if (CONFIG.autoMs > 0) scheduleAuto(CONFIG.autoMs);
+function listenOn(port) {
+  return new Promise((resolve, reject) => {
+    const s = http.createServer(handler);
+    s.once('error', reject);
+    s.listen(port, () => { s.removeListener('error', reject); resolve(s); });
+  });
+}
+
+let server = null;
+let currentPort = effectivePort();
+listenOn(currentPort).then(s => {
+  server = s;
+  const url = `http://localhost:${currentPort}`;
+  console.log(`espn-statcrew running: ${url}`);
+  console.log(`XPression feed URL:    ${url}/feed.xml`);
+  console.log(`Settings file:         ${SETTINGS_FILE}`);
+  if (effectiveOutFile()) console.log(`Writing XML to:        ${effectiveOutFile()}`);
+  if (locked.length) console.log(`From start.bat:        ${locked.join(', ')} (these override the Settings window)`);
+  if (state.eventId) console.log(`Startup game:          ${state.eventId}`);
+  const auto = startupAutoMs();
+  if (auto > 0) scheduleAuto(auto);
+  if (settings.openBrowser && !process.env.NO_BROWSER) openBrowser(url);
+}).catch(e => {
+  console.error(e.code === 'EADDRINUSE'
+    ? `Port ${currentPort} is already in use. Close the other copy, or change "port" in settings.json.`
+    : `Could not start: ${e.message}`);
+  process.exit(1);
 });
