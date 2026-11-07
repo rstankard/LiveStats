@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ESPN → XPression feed</title>
+<style>
+  :root{
+    --ink:#0b0f14; --panel:#131a22; --panel2:#0f151c; --line:#243040;
+    --text:#e8eef4; --muted:#7d8b99; --live:#ff4d3d; --ok:#3ddc84; --amber:#ffb020;
+    color-scheme:dark;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--ink); color:var(--text);
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    display:flex; flex-direction:column; min-height:100%;
+    padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0);
+  }
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  header{
+    display:flex; align-items:center; justify-content:space-between; gap:16px;
+    padding:14px 20px; border-bottom:1px solid var(--line); background:var(--panel2);
+  }
+  header h1{font-size:15px; font-weight:650; letter-spacing:.2px; margin:0}
+  header h1 span{color:var(--muted); font-weight:500}
+  .feed{display:flex; align-items:center; gap:10px; font-size:13px; color:var(--muted)}
+  .dot{width:9px; height:9px; border-radius:50%; background:#3a4553; flex:0 0 auto}
+  .dot.on{background:var(--ok); box-shadow:0 0 0 4px rgba(61,220,132,.15)}
+  .url{color:var(--text)} .copy{cursor:pointer; border:1px solid var(--line); background:transparent; color:var(--muted); border-radius:6px; padding:3px 8px; font-size:12px}
+  .copy:hover{color:var(--text); border-color:#3a4a5e}
+
+  .gamebar{display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:14px 20px; border-bottom:1px solid var(--line)}
+  .gamebar input{
+    background:var(--panel); border:1px solid var(--line); color:var(--text);
+    border-radius:8px; padding:9px 11px; font-size:14px; width:150px;
+  }
+  .gamebar input:focus{outline:none; border-color:#3a5a80}
+  button.btn{
+    background:var(--panel); color:var(--text); border:1px solid var(--line);
+    border-radius:8px; padding:9px 14px; font-size:14px; cursor:pointer;
+  }
+  button.btn:hover{border-color:#3a4a5e}
+  .loaded{color:var(--muted); font-size:14px; margin-left:4px}
+  .loaded b{color:var(--text)}
+
+  main{flex:1; display:flex; align-items:center; justify-content:center; padding:28px 20px; gap:44px; flex-wrap:wrap}
+  .trigger-wrap{display:flex; flex-direction:column; align-items:center; gap:16px}
+  .trigger{
+    width:210px; height:210px; border-radius:50%; cursor:pointer; user-select:none;
+    border:2px solid #6a1a14; background:radial-gradient(circle at 50% 38%, #ff5a49, #d0281b 70%);
+    color:#fff; font-size:34px; font-weight:800; letter-spacing:1px;
+    box-shadow:0 10px 30px rgba(255,60,45,.25), inset 0 2px 6px rgba(255,255,255,.35), inset 0 -10px 22px rgba(0,0,0,.35);
+    display:flex; align-items:center; justify-content:center; transition:transform .06s ease, box-shadow .12s ease;
+  }
+  .trigger:active{transform:translateY(3px) scale(.985); box-shadow:0 4px 14px rgba(255,60,45,.25), inset 0 2px 6px rgba(255,255,255,.25), inset 0 -6px 16px rgba(0,0,0,.4)}
+  .trigger[disabled]{filter:grayscale(.7) brightness(.6); cursor:not-allowed}
+  .trigger.flash{animation:flash .5s ease}
+  @keyframes flash{0%{box-shadow:0 0 0 0 rgba(61,220,132,.6)}100%{box-shadow:0 0 0 26px rgba(61,220,132,0)}}
+  @media (prefers-reduced-motion:reduce){.trigger,.trigger.flash{animation:none;transition:none}}
+  .pullinfo{font-size:14px; color:var(--muted); text-align:center; min-height:20px}
+  .pullinfo b{color:var(--text)}
+  .err{color:var(--live)}
+  .modes{display:flex; gap:6px; margin-top:4px}
+  .modes button{
+    background:var(--panel); color:var(--muted); border:1px solid var(--line);
+    border-radius:7px; padding:6px 13px; font-size:13px; cursor:pointer; min-width:52px;
+  }
+  .modes button:hover{color:var(--text); border-color:#3a4a5e}
+  .modes button.on{background:#22303f; color:var(--text); border-color:#3a5a80; box-shadow:inset 0 0 0 1px rgba(58,90,128,.5)}
+
+  .preview{min-width:300px; max-width:520px; flex:1}
+  .preview h2{font-size:13px; font-weight:600; color:var(--muted); margin:0 0 10px}
+  .cols{display:grid; grid-template-columns:1fr 1fr; gap:18px}
+  .team{border:1px solid var(--line); border-radius:10px; background:var(--panel); overflow:hidden}
+  .team .cap{display:flex; justify-content:space-between; padding:9px 12px; border-bottom:1px solid var(--line); font-size:13px}
+  .team .cap b{font-size:14px}
+  table{width:100%; border-collapse:collapse; font-size:13px}
+  th,td{text-align:right; padding:5px 10px}
+  th:first-child,td:first-child{text-align:left}
+  thead th{color:var(--muted); font-weight:500; font-size:11px; border-bottom:1px solid var(--line)}
+  tbody tr:nth-child(even){background:rgba(255,255,255,.02)}
+  .jersey{color:var(--amber)}
+  .empty{color:var(--muted); padding:16px; text-align:center; font-size:13px}
+
+  footer{padding:12px 20px; border-top:1px solid var(--line); color:var(--muted); font-size:12.5px; background:var(--panel2)}
+  footer code{color:var(--text)}
+
+  .picker{position:fixed; inset:0; background:rgba(3,6,10,.72); display:none; align-items:center; justify-content:center; padding:20px; z-index:9}
+  .picker.open{display:flex}
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:12px; width:min(620px,100%); max-height:80vh; display:flex; flex-direction:column}
+  .card .ch{display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid var(--line)}
+  .card .ch input{background:var(--panel2); border:1px solid var(--line); color:var(--text); border-radius:8px; padding:8px 10px}
+  .card .list{overflow:auto; padding:6px}
+  .grow{flex:1}
+  .gi{display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 12px; border-radius:8px; cursor:pointer}
+  .gi:hover{background:rgba(255,255,255,.04)}
+  .gi .st{font-size:12px; color:var(--muted)}
+  .gi .st.live{color:var(--ok)}
+  .x{cursor:pointer; color:var(--muted); border:0; background:none; font-size:20px}
+</style>
+</head>
+<body>
+  <header>
+    <h1>ESPN <span>→</span> XPression feed</h1>
+    <div class="feed">
+      <span class="dot" id="fdot"></span>
+      <span id="fstate">idle</span>
+      <span class="url mono" id="furl"></span>
+      <button class="copy" id="fcopy">copy</button>
+    </div>
+  </header>
+
+  <div class="gamebar">
+    <input id="eid" class="mono" placeholder="ESPN event id" inputmode="numeric">
+    <button class="btn" id="load">Load game</button>
+    <button class="btn" id="find">Find by date…</button>
+    <span class="loaded" id="loaded">No game loaded</span>
+  </div>
+
+  <main>
+    <div class="trigger-wrap">
+      <div class="trigger" id="hit" role="button" tabindex="0" title="Pull the latest stats">HIT&nbsp;ME</div>
+      <div class="pullinfo" id="pullinfo">Load a game, then hit to pull stats.</div>
+      <div class="modes" id="modes" title="How often to refresh the feed">
+        <button data-ms="0" class="on">Manual</button>
+        <button data-ms="15000">15s</button>
+        <button data-ms="30000">30s</button>
+        <button data-ms="60000">1m</button>
+        <button data-ms="120000">2m</button>
+      </div>
+    </div>
+    <section class="preview">
+      <h2>Rushing (updates on each hit)</h2>
+      <div class="cols">
+        <div class="team" id="teamV"><div class="cap"><b>—</b><span></span></div><div class="empty">no data</div></div>
+        <div class="team" id="teamH"><div class="cap"><b>—</b><span></span></div><div class="empty">no data</div></div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    In XPression, point your <b>football statcrew</b> DataLinq source at <code id="furl2"></code> and poll it. Players are keyed by jersey, so <code class="mono">team\player&lt;code=@Key_Stat@&gt;\rush</code> works as-is. Each hit refreshes the feed.
+  </footer>
+
+  <div class="picker" id="picker">
+    <div class="card">
+      <div class="ch">
+        <input type="date" id="pdate">
+        <button class="btn" id="pgo">Find</button>
+        <span class="grow"></span>
+        <button class="x" id="pclose">×</button>
+      </div>
+      <div class="list" id="plist"><div class="empty">Pick a date and hit Find.</div></div>
+    </div>
+  </div>
+
+<script>
+const $ = s => document.querySelector(s);
+const feedUrl = location.origin + '/feed.xml';
+$('#furl').textContent = feedUrl; $('#furl2').textContent = feedUrl;
+$('#fcopy').onclick = () => navigator.clipboard?.writeText(feedUrl);
+
+function fmtTime(iso){ if(!iso) return 'never'; const d=new Date(iso); return d.toLocaleTimeString(); }
+
+function renderTeam(el, t, rows){
+  if(!t){ el.innerHTML = '<div class="cap"><b>—</b><span></span></div><div class="empty">no data</div>'; return; }
+  const head = `<div class="cap"><b>${t.code||'—'} <span style="color:var(--muted)">${t.name||''}</span></b><span>${t.score??''}</span></div>`;
+  if(!rows.length){ el.innerHTML = head + '<div class="empty">no rushers yet</div>'; return; }
+  const body = rows.slice(0,8).map(r=>{
+    const s=r.stats||{};
+    return `<tr><td><span class="jersey mono">${r.code||''}</span> ${r.name||''}</td><td class="mono">${s.att??''}</td><td class="mono">${s.yds??''}</td><td class="mono">${s.td??''}</td><td class="mono">${s.long??''}</td></tr>`;
+  }).join('');
+  el.innerHTML = head + `<table><thead><tr><th>#  Player</th><th>ATT</th><th>YDS</th><th>TD</th><th>LNG</th></tr></thead><tbody>${body}</tbody></table>`;
+}
+
+let autoMs=0, nextAt=null, lastUpdated=null, lastPlayers=0, lastError=null, seenUpdated=null;
+const labelFor = ms => ms>=60000 ? (ms/60000)+'m' : (ms/1000)+'s';
+function flashBtn(){ const b=$('#hit'); b.classList.add('flash'); setTimeout(()=>b.classList.remove('flash'),500); }
+
+function updateInfo(){
+  const el=$('#pullinfo');
+  if(lastError){ el.innerHTML = `<span class="err">${lastError}</span>`; return; }
+  if(autoMs>0){
+    const rem = nextAt ? Math.max(0, Math.ceil((nextAt-Date.now())/1000)) : 0;
+    const last = lastUpdated ? ` · last ${fmtTime(lastUpdated)}` : '';
+    el.innerHTML = `Auto · every ${labelFor(autoMs)} · next in <b>${rem}s</b>${last}`;
+  } else if(lastUpdated){
+    el.innerHTML = `Last pull <b>${fmtTime(lastUpdated)}</b> · <b>${lastPlayers}</b> players`;
+  } else {
+    el.textContent = 'Load a game, then hit to pull stats.';
+  }
+}
+
+function apply(st){
+  if(st.eventId && document.activeElement !== $('#eid')) $('#eid').value = st.eventId;
+  $('#loaded').innerHTML = st.game ? `Loaded <b>${st.game}</b>${st.teams?.length===2?` · ${st.teams[0].score}–${st.teams[1].score}`:''}` : (st.eventId? 'Game set — hit to pull.' : 'No game loaded');
+  const live = !!st.updated;
+  $('#fdot').classList.toggle('on', live);
+  $('#fstate').textContent = live ? 'feed live' : 'idle';
+  $('#hit').toggleAttribute('disabled', !st.eventId);
+
+  autoMs = st.autoMs||0; nextAt = st.nextAt||null;
+  lastPlayers = st.playerCount||0; lastError = st.error||null;
+  if(st.updated && st.updated!==lastUpdated){
+    if(seenUpdated!==null) flashBtn();     // visible feedback on auto pulls too
+    lastUpdated = st.updated; seenUpdated = st.updated;
+  } else if(!st.updated){ lastUpdated=null; }
+
+  $('#modes').querySelectorAll('button').forEach(b=> b.classList.toggle('on', (+b.dataset.ms)===autoMs));
+  updateInfo();
+
+  const V=(st.teams||[]).find(t=>t.vh==='V'), H=(st.teams||[]).find(t=>t.vh==='H');
+  const pv=st.preview||[];
+  renderTeam($('#teamV'), V, pv.filter(p=>p.vh==='V'));
+  renderTeam($('#teamH'), H, pv.filter(p=>p.vh==='H'));
+}
+
+async function status(){ try{ apply(await (await fetch('/api/status')).json()); }catch{} }
+
+async function hit(){
+  const b=$('#hit'); if(b.hasAttribute('disabled')) return;
+  b.setAttribute('disabled','1'); $('#pullinfo').textContent='Pulling…';
+  try{
+    const r = await (await fetch('/api/pull',{method:'POST'})).json();
+    if(!r.ok) throw new Error(r.error||'pull failed');
+    b.classList.add('flash'); setTimeout(()=>b.classList.remove('flash'),500);
+    await status();
+  }catch(e){ $('#pullinfo').innerHTML = `<span class="err">${e.message}</span>`; }
+  finally{ b.removeAttribute('disabled'); }
+}
+
+async function loadGame(id){
+  await fetch('/api/setgame',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({eventId:id})});
+  await status();
+}
+
+$('#hit').onclick = hit;
+$('#hit').onkeydown = e => { if(e.key===' '||e.key==='Enter'){ e.preventDefault(); hit(); } };
+$('#load').onclick = () => loadGame($('#eid').value.trim());
+$('#eid').onkeydown = e => { if(e.key==='Enter') loadGame($('#eid').value.trim()); };
+
+async function setAuto(ms){
+  try{ await fetch('/api/setauto',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ms})}); }catch{}
+  await status();
+}
+$('#modes').querySelectorAll('button').forEach(b=> b.onclick = () => setAuto(+b.dataset.ms));
+
+// picker
+$('#find').onclick = () => { $('#picker').classList.add('open'); const d=new Date(); $('#pdate').value=d.toISOString().slice(0,10); };
+$('#pclose').onclick = () => $('#picker').classList.remove('open');
+$('#picker').onclick = e => { if(e.target===$('#picker')) $('#picker').classList.remove('open'); };
+$('#pgo').onclick = async () => {
+  const date = ($('#pdate').value||'').replace(/-/g,'');
+  $('#plist').innerHTML = '<div class="empty">Loading…</div>';
+  try{
+    const {games} = await (await fetch('/api/scoreboard?date='+date)).json();
+    if(!games.length){ $('#plist').innerHTML='<div class="empty">No games found for that date.</div>'; return; }
+    $('#plist').innerHTML = games.map(g=>
+      `<div class="gi" data-id="${g.id}"><span>${g.short||g.name}</span><span class="st ${g.state==='in'?'live':''}">${g.detail||g.state}</span></div>`
+    ).join('');
+    $('#plist').querySelectorAll('.gi').forEach(el=> el.onclick = () => { $('#eid').value=el.dataset.id; loadGame(el.dataset.id); $('#picker').classList.remove('open'); });
+  }catch(e){ $('#plist').innerHTML='<div class="empty">Lookup failed: '+e.message+'</div>'; }
+};
+
+status(); setInterval(status, 5000);
+let resyncGuard=0;
+setInterval(()=>{
+  if(autoMs>0){
+    updateInfo();
+    if(nextAt && Date.now() > nextAt+300 && Date.now()-resyncGuard>1500){ resyncGuard=Date.now(); status(); }
+  }
+}, 1000);
+</script>
+</body>
+</html>
